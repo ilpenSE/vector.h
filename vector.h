@@ -39,6 +39,11 @@ typedef struct {
 VECTORDEF bool vec_init(Vector* v, size_t elem_size);
 
 /*
+  Frees the vector items and set capacity to zero
+*/
+VECTORDEF bool vec_free(Vector *v);
+
+/*
   Pushes an element to the Vector named v, acts like da_append
   Value is void*, you have to cast it to void*,
   if you dont want any intermediate value, use vec_push_val
@@ -87,12 +92,14 @@ VECTORDEF bool vec_equals_s(Vector* lv, Vector* rv);
 */
 #define vec_push_val(v, val)                    \
   do {                                          \
-    __auto_type tmp = (val);                    \
+    void* tmp = (void*)(val);                   \
     vec_push((v), &tmp);                        \
   } while (0)
 
 // vec_get returns pointer, this macro returns typeof the item
 #define vec_get_as(v, index, T) (*(T*)vec_get((v), (index)))
+
+#define VEC_INITIAL_CAPACITY 32
 
 // IMPLEMENTATION
 #ifdef VECTOR_IMPLEMENTATION
@@ -101,7 +108,14 @@ bool vec_init(Vector* v, size_t elem_size) {
   if (!v) return false;
   *v = (Vector) {0};
   v->elem_size = elem_size;
-  if (!vec_reserve(v, 8)) return false;
+  if (!vec_reserve(v, VEC_INITIAL_CAPACITY)) return false;
+  return true;
+}
+
+bool vec_free(Vector *v) {
+  if (!v) return false;
+  free(v->items);
+  v->cap = 0;
   return true;
 }
 
@@ -116,7 +130,7 @@ bool vec_reserve(Vector* v, size_t extra) {
   if (v->cap >= SIZE_MAX / 2) return false;
 
   // calculate new capacity
-  size_t new_cap = v->cap ? v->cap : 8; // 8 is initial
+  size_t new_cap = v->cap ? v->cap : VEC_INITIAL_CAPACITY;
   while (new_cap < needed)
     new_cap *= 2; // exponential growth
 
@@ -131,7 +145,7 @@ bool vec_push(Vector* v, const void* value) {
   if (!v || !v->items) return false;
   if (!vec_reserve(v, 1)) return false;
 
-  // cast v->items to char to get raw byte offsets
+  // cast v->items to char* to get raw byte offsets
   memcpy(
     (char*)v->items + v->len * v->elem_size,
     value,

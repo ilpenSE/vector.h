@@ -63,3 +63,13 @@ bool testPushMany(Vector* given) {
   };
   return vec_equals(given, &v);
 }
+
+bool testUAF(Vector* given) {
+  vec_free(given);
+  for (size_t i = 0; i < given->len; i++) {
+    // UB (Undefined behavior)
+    // should have print garbage values or recieve SIGSEGV
+    printf("elem %zu: %d\n", i, vec_get_as(given, i, int));
+  }
+  return true;
+}

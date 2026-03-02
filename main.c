@@ -8,6 +8,7 @@ bool testInit(Vector* given);
 bool testPushVal(Vector* given);
 bool testPush(Vector* given);
 bool testPushMany(Vector* given);
+bool testUAF(Vector* given);
 
 int main() {
   size_t szarr[] = {1, 2, 3, 4, 5};
@@ -52,5 +53,10 @@ int main() {
     printf("0th elem: %d\n", a);
     printf("0th elem: %d\n", b);
   }
+  printf("\n");
+
+  // UAF (Use-After-Free) test
+  if (!testUAF(&v)) printf("Use-After-Free test failed!\n");
+  else printf("Vector capacity after free: %zu\n", v.cap);
   return 0;
 }
