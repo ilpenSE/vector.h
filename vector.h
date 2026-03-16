@@ -76,15 +76,8 @@ VECTORDEF void* vec_get(Vector* v, size_t index);
 
 /*
   Compares two vectors and checks if they both are the same
-  (except capacity field, use vec_equals_s to check it)
 */
 VECTORDEF bool vec_equals(Vector* lv, Vector* rv);
-
-/*
-  Compares two vectors STRICTLY, not only checks
-  items and len, it checks capacity.
-*/
-VECTORDEF bool vec_equals_s(Vector* lv, Vector* rv);
 
 /*
   Pushes the literal values to vector, creates
@@ -92,20 +85,19 @@ VECTORDEF bool vec_equals_s(Vector* lv, Vector* rv);
 */
 #define vec_push_val(v, val)                    \
   do {                                          \
-    void* tmp = (void*)(val);                   \
+    __typeof__(val) tmp = (val);                \
     vec_push((v), &tmp);                        \
   } while (0)
 
 // vec_get returns pointer, this macro returns typeof the item
 #define vec_get_as(v, index, T) (*(T*)vec_get((v), (index)))
 
-#define VEC_INITIAL_CAPACITY 32
+#define VEC_INITIAL_CAPACITY 64
 
 // IMPLEMENTATION
 #ifdef VECTOR_IMPLEMENTATION
 
 bool vec_init(Vector* v, size_t elem_size) {
-  if (!v) return false;
   *v = (Vector) {0};
   v->elem_size = elem_size;
   if (!vec_reserve(v, VEC_INITIAL_CAPACITY)) return false;
@@ -113,14 +105,12 @@ bool vec_init(Vector* v, size_t elem_size) {
 }
 
 bool vec_free(Vector *v) {
-  if (!v) return false;
   free(v->items);
   v->cap = 0;
   return true;
 }
 
 bool vec_reserve(Vector* v, size_t extra) {
-  if (!v) return false;
   size_t needed = v->len + extra;
 
   // enough capacity, no need to realloc
@@ -142,7 +132,7 @@ bool vec_reserve(Vector* v, size_t extra) {
 }
 
 bool vec_push(Vector* v, const void* value) {
-  if (!v || !v->items) return false;
+  if (!v->items) return false;
   if (!vec_reserve(v, 1)) return false;
 
   // cast v->items to char* to get raw byte offsets
@@ -156,7 +146,7 @@ bool vec_push(Vector* v, const void* value) {
 }
 
 bool vec_push_many(Vector* v, const void* values, size_t count) {
-  if (!v || !v->items) return false;
+  if (!v->items) return false;
   if (!vec_reserve(v, count)) return false;
 
   memcpy(
@@ -169,20 +159,17 @@ bool vec_push_many(Vector* v, const void* values, size_t count) {
 }
 
 void* vec_get(Vector* v, size_t index) {
-  if (!v || !v->items || index >= v->len) return NULL;
+  if (!v->items || index >= v->len) return NULL;
   return (char*)v->items + index * v->elem_size;
 }
 
 bool vec_equals(Vector* lv, Vector* rv) {
-  if (!lv || !rv) return false;
+  if (lv == rv) return true;
   if (lv->elem_size != rv->elem_size) return false;
   if (lv->len != rv->len) return false;
   return memcmp(lv->items, rv->items, lv->len * lv->elem_size) == 0;
 }
 
-bool vec_equals_s(Vector* lv, Vector* rv) {
-  return vec_equals(lv, rv) && (lv->cap == rv->cap);
-}
 #endif // VECTOR_IMPLEMENTATION
 
 #endif // VECTOR_H
