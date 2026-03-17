@@ -1,8 +1,8 @@
 CC = gcc
-CFLAGS = -Wall -Wextra
+CFLAGS = -Wall -Wextra -I..
 
 TARGET = app
-SRC = main.c tests.c
+SRC = main.c ints.c strings.c
 
 ifeq ($(debug),1)
 	CFLAGS += -g -O0
@@ -12,5 +12,5 @@ endif
 
 all: $(TARGET)
 
-$(TARGET): $(SRC) vector.h
+$(TARGET): $(SRC) ../vector.h
 	$(CC) $(CFLAGS) -o $(TARGET) $(SRC) 
