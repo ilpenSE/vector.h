@@ -23,7 +23,7 @@ void print_int_vector(Vector(int)* v) {
   printf(STRINGIFY(Vector(int)) "{items: [");
   if (v->items) {
     for (size_t i = 0; i < len; i++) {
-      int elem = vec_get(v, i);
+      int elem = vec_at(v, i);
       printf("%d%s", elem, (i == len - 1 ? "" : ", "));
     }
   }
@@ -37,7 +37,7 @@ void print_cstr_vector(Vector(char_ptr)* v) {
   printf(STRINGIFY(Vector(char_ptr)) "{items: [");
   if (v->items) {
     for (size_t i = 0; i < len; i++) {
-      char* elem = vec_get(v, i);
+      char* elem = vec_at(v, i);
       printf("\"%s\"%s", elem, (i == len - 1 ? "" : ", "));
     }
   }

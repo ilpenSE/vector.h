@@ -20,7 +20,7 @@
   vec_push(&v, 42);
   vec_push(&v, 99);
 
-  int x = vec_get(&v, 0);
+  int x = vec_at(&v, 0);
   int len = vec_len(&v);
 
   vec_free(&v);
@@ -61,6 +61,14 @@ typedef struct {
     T _type_tag;                                \
   } Vector_##TName;
 
+typedef struct {
+  VectorHeader* header;
+  void** items;
+  size_t elem_size;
+} VectorGeneric;
+
+#define VEC_TO_GENERIC(v) ((VectorGeneric){&(v)->h, (void**)&(v)->items, sizeof((v)->_type_tag)})
+
 // User-Space macros, you want to use them:
 
 #define vec_init(TName) (Vector(TName)){0}
@@ -68,35 +76,37 @@ typedef struct {
 #define vec_push(v, val)                                            \
   __extension__({                                                   \
       __typeof__((v)->_type_tag) _tmp = (val);                      \
-      _vec_push(&(v)->h, (void**)&(v)->items, sizeof(_tmp), &_tmp); \
+      _vec_push(VEC_TO_GENERIC((v)), &_tmp); \
     })
 
 #define vec_push_many(v, ...)                                           \
   __extension__({                                                       \
       __typeof__((v)->_type_tag) _arr[] = {__VA_ARGS__};                \
-      _vec_push_many(&(v)->h, (void**)&(v)->items,                      \
-                     sizeof((v)->_type_tag), _arr, sizeof(_arr)/sizeof(_arr[0])); \
+      _vec_push_many(VEC_TO_GENERIC((v)), _arr, sizeof(_arr)/sizeof(_arr[0])); \
     })
 
-#define vec_get(v, index)                                             \
+#define vec_remove_unord(v, idx) \
+  _vec_remove_unord(VEC_TO_GENERIC((v)), (idx))
+
+#define vec_at(v, index)                                             \
   (*((__typeof__((v)->_type_tag)*)                                    \
-     _vec_get(&(v)->h, (v)->items, sizeof((v)->_type_tag), (index))))
+     _vec_at(VEC_TO_GENERIC((v)), (index))))
 
 #define vec_idx(v, item)                                             \
   __extension__({                                                   \
       __typeof__((v)->_type_tag) _tmp = (item);                      \
-      _vec_idx(&(v)->h, (void**)&(v)->items, sizeof(_tmp), &_tmp); \
+      _vec_idx(VEC_TO_GENERIC((v)), &_tmp); \
     })
 
 #define vec_contains(v, item) (vec_idx(v, item) != -1)
 
 #define vec_pop(v, out)                                               \
-  _vec_pop(&(v)->h, (void**)&(v)->items, sizeof((v)->_type_tag), (out))
+  _vec_pop(VEC_TO_GENERIC((v)), (out))
 
 #define vec_reserve(v, extra)                                           \
-  _vec_reserve(&(v)->h, (void**)&(v)->items, sizeof(((v)->_type_tag)), (extra))
+  _vec_reserve(VEC_TO_GENERIC((v)), (extra))
 
-#define vec_free(v) _vec_free(&(v)->h, (void**)&(v)->items)
+#define vec_free(v) _vec_free(VEC_TO_GENERIC((v)))
 
 #define vec_override_item_comparator(v, func) \
   ((v)->h.item_comparator = func)
@@ -112,8 +122,8 @@ typedef struct {
 #define vec_cap(v)   ((v)->h.cap)
 #define vec_esize(v) (sizeof((v)->_type_tag))
 
-#define vec_last(v) (vec_get((v), vec_len((v)) - 1))
-#define vec_first(v) (vec_get((v), 0))
+#define vec_last(v) (vec_at((v), vec_len((v)) - 1))
+#define vec_first(v) (vec_at((v), 0))
 
 #define vec_islast(v, item) (vec_last((v)) == item)
 #define vec_isfirst(v, item) (vec_first((v)) == item)
@@ -122,25 +132,21 @@ typedef struct {
 
 // Raw Functions
 
-VECTORDEF bool _vec_push(VectorHeader* h, void** items,
-                         size_t elem_size, const void* value);
+VECTORDEF bool _vec_push(VectorGeneric v, const void* value);
 
-VECTORDEF bool _vec_push_many(VectorHeader* h, void** items,
-                               size_t elem_size, const void* values, size_t count);
+VECTORDEF bool _vec_push_many(VectorGeneric v, const void* values, size_t count);
 
-VECTORDEF void* _vec_get(VectorHeader* h, void* items,
-                        size_t elem_size, size_t index);
+VECTORDEF bool _vec_remove_unord(VectorGeneric v, size_t idx);
 
-VECTORDEF int _vec_idx(VectorHeader* h, void** items,
-                       size_t elem_size, const void* item);
+VECTORDEF void* _vec_at(VectorGeneric v, size_t index);
 
-VECTORDEF bool _vec_pop(VectorHeader* h, void** items,
-                        size_t elem_size, void* out);
+VECTORDEF int _vec_idx(VectorGeneric v, const void* item);
 
-VECTORDEF bool _vec_reserve(VectorHeader* h, void** items,
-                            size_t elem_size, size_t extra);
+VECTORDEF bool _vec_pop(VectorGeneric v, void* out);
 
-VECTORDEF void _vec_free(VectorHeader* h, void** items);
+VECTORDEF bool _vec_reserve(VectorGeneric v, size_t extra);
+
+VECTORDEF void _vec_free(VectorGeneric v);
 
 VECTORDEF bool _vec_equals(VectorHeader* lh, void* li,
                            VectorHeader* rh, void* ri,
@@ -148,73 +154,80 @@ VECTORDEF bool _vec_equals(VectorHeader* lh, void* li,
 
 #ifdef VECTOR_IMPLEMENTATION
 
-void _vec_free(VectorHeader* h, void** items) {
-  free(*items);
-  *items = NULL;
-  h->len = 0;
-  h->cap = 0;
+void _vec_free(VectorGeneric v) {
+  free(*v.items);
+  *v.items = NULL;
+  v.header->len = 0;
+  v.header->cap = 0;
 }
 
-bool _vec_reserve(VectorHeader* h, void** items, size_t elem_size, size_t extra) {
-  if (h->cap >= SIZE_MAX / 2) return false;
-  size_t needed = h->len + extra;
+bool _vec_reserve(VectorGeneric v, size_t extra) {
+  if (v.header->cap >= SIZE_MAX / 2) return false;
+  size_t needed = v.header->len + extra;
 
   // enough capacity, no need to realloc
-  if (h->cap >= needed) return true;
+  if (v.header->cap >= needed) return true;
 
   // calculate new capacity
-  size_t new_cap = h->cap ? h->cap : VEC_INITIAL_CAPACITY;
+  size_t new_cap = v.header->cap ? v.header->cap : VEC_INITIAL_CAPACITY;
   while (new_cap < needed)
     new_cap *= 2;
 
-  void* tmp = realloc(*items, new_cap * elem_size);
+  void* tmp = realloc(*v.items, new_cap * v.elem_size);
   if (!tmp) return false;
-  *items = tmp;
-  h->cap = new_cap;
+  *v.items = tmp;
+  v.header->cap = new_cap;
   return true;
 }
 
-bool _vec_pop(VectorHeader* h, void** items, size_t elem_size, void* out) {
-  if (h->len == 0) return false;
-  if (out) memcpy(out, (char*)(*items) + (h->len - 1) * elem_size, elem_size);
-  h->len -= 1;
+bool _vec_pop(VectorGeneric v, void* out) {
+  if (v.header->len == 0) return false;
+  if (out) memcpy(out, (char*)(*v.items) + (v.header->len - 1) * v.elem_size, v.elem_size);
+  v.header->len -= 1;
   return true;
 }
 
-bool _vec_push(VectorHeader* h, void** items, size_t elem_size, const void* value) {
-  if (!_vec_reserve(h, items, elem_size, 1)) return false;
+bool _vec_push(VectorGeneric v, const void* value) {
+  if (!_vec_reserve(v, 1)) return false;
 
   memcpy(
-    (char*)(*items) + h->len * elem_size,
+    (char*)(*v.items) + v.header->len * v.elem_size,
     value,
-    elem_size
+    v.elem_size
     );
-  h->len += 1;
+  v.header->len += 1;
   return true;
 }
 
-bool _vec_push_many(VectorHeader* h, void** items, size_t elem_size, const void* values, size_t count) {
-  if (!_vec_reserve(h, items, elem_size, count)) return false;
+bool _vec_push_many(VectorGeneric v, const void* values, size_t count) {
+  if (!_vec_reserve(v, count)) return false;
 
   memcpy(
-    (char*)(*items) + h->len * elem_size,
+    (char*)(*v.items) + v.header->len * v.elem_size,
     values,
-    elem_size * count
+    v.elem_size * count
     );
-  h->len += count;
+  v.header->len += count;
   return true;
 }
 
-void* _vec_get(VectorHeader* h, void* items, size_t elem_size, size_t index) {
-  if (!items || index >= h->len) return NULL;
-  return (char*)items + index * elem_size;
+bool _vec_remove_unord(VectorGeneric v, size_t idx) {
+  if (idx >= v.header->len) return false;
+  memmove(_vec_at(v, idx), _vec_at(v, v.header->len - 1), v.elem_size);
+  v.header->len -= 1;
+  return true;
 }
 
-int _vec_idx(VectorHeader* h, void** items, size_t elem_size, const void* item) {
-  for (size_t i = 0; i < h->len; i++) {
-    uint8_t* b = (uint8_t*)(*items) + i * elem_size;
-    vec_item_comparator_t comp_fn = h->item_comparator ? h->item_comparator : memcmp;
-    if (comp_fn(b, item, elem_size) == 0) return i;
+void* _vec_at(VectorGeneric v, size_t idx) {
+  if (!(*v.items) || idx >= v.header->len) return NULL;
+  return (char*)(*v.items) + idx * v.elem_size;
+}
+
+int _vec_idx(VectorGeneric v, const void* item) {
+  for (size_t i = 0; i < v.header->len; i++) {
+    uint8_t* b = (uint8_t*)(*v.items) + i * v.elem_size;
+    vec_item_comparator_t comp_fn = v.header->item_comparator ? v.header->item_comparator : memcmp;
+    if (comp_fn(b, item, v.elem_size) == 0) return i;
   }
   return -1;
 }

@@ -16,7 +16,7 @@ int test_ints() {
   vec_pop(&vec, NULL);
   print_int_vector(&vec);
 
-  printf("elem in idx 1: %d\n", vec_get(&vec, 1));
+  printf("elem in idx 1: %d\n", vec_at(&vec, 1));
   printf("last elem: %d\n", vec_last(&vec));
 
   printf("foreach: [");
@@ -30,6 +30,10 @@ int test_ints() {
 
   printf("vec_idx: %d\n", vec_idx(&vec, 20));
   printf(vec_contains(&vec, 620) ? "contains\n" : "doesnt contain\n");
+
+  vec_remove_unord(&vec, 1); // remove elem with idx 1 (20 in our case)
+  printf("Removed 20\n");
+  print_int_vector(&vec);
 
   vec_free(&vec);
   print_int_vector(&vec);
