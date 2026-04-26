@@ -8,8 +8,8 @@ int main(int argc, char** argv) {
   const char* kind = "";
   if (argc >= 2) kind = argv[1];
 
-  if (strcmp(kind, "ints") == 0) return test_ints();
-  if (strcmp(kind, "strings") == 0) return test_strings();
+  if (strncmp(kind, "ints", 4) == 0) return test_ints();
+  if (strncmp(kind, "strings", 7) == 0) return test_strings();
 
   printf("Unknown test kind.\n");
   printf("Usage:\n");
@@ -23,8 +23,10 @@ void print_int_vector(Vector(int)* v) {
   printf(STRINGIFY(Vector(int)) "{items: [");
   if (v->items) {
     for (size_t i = 0; i < len; i++) {
-      int elem = vec_at(v, i);
-      printf("%d%s", elem, (i == len - 1 ? "" : ", "));
+      const char* suffix = i == len - 1 ? "" : ", ";
+      int* elem = vec_at(v, i);
+      if (elem) printf("%d%s", *elem, suffix);
+      else printf("(null)%s", suffix);
     }
   }
   printf("], ");
@@ -37,8 +39,10 @@ void print_cstr_vector(Vector(char_ptr)* v) {
   printf(STRINGIFY(Vector(char_ptr)) "{items: [");
   if (v->items) {
     for (size_t i = 0; i < len; i++) {
-      char* elem = vec_at(v, i);
-      printf("\"%s\"%s", elem, (i == len - 1 ? "" : ", "));
+      const char* suffix = i == len - 1 ? "" : ", ";
+      char** elem = vec_at(v, i);
+      if (elem) printf("\"%s\"%s", *elem, suffix);
+      else printf("\"(null)\"%s", suffix);
     }
   }
   printf("], ");

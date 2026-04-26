@@ -15,17 +15,16 @@
   DECL_VECTOR(char*, char_ptr)
 
   int main(void) {
-  Vector(int) v = {0};
+    Vector(int) v = {0};
 
-  vec_push(&v, 42);
-  vec_push(&v, 99);
+    vec_push(&v, 42);
+    vec_push(&v, 99);
 
-  int x = vec_at(&v, 0);
-  int len = vec_len(&v);
+    int x = vec_at(&v, 0);
+    int len = vec_len(&v);
 
-  vec_free(&v);
+    vec_free(&v);
   }
-
 */
 
 #ifdef __cplusplus
@@ -41,15 +40,27 @@
 #include <string.h>
 
 #define VEC_INITIAL_CAPACITY 64
-typedef char* char_ptr;
-typedef int* int_ptr;
 
-typedef int (*vec_item_comparator_t)(const void* lhs, const void* rhs, size_t elem_size);
+// Predefined typedefs to use in DECL_VECTOR and Vector()
+#ifndef __char_ptr_defined
+#define __char_ptr_defined
+typedef char* char_ptr;
+#endif
+
+#ifndef __cchar_ptr_defined
+#define __cchar_ptr_defined
+typedef const char* cchar_ptr;
+#endif
+
+#ifndef __int_ptr_defined
+#define __int_ptr_defined
+typedef int* int_ptr;
+#endif
 
 typedef struct {
-  vec_item_comparator_t item_comparator;
   size_t cap;
   size_t len;
+  bool is_freed;
 } VectorHeader;
 
 #define Vector(TName) Vector_##TName
@@ -69,7 +80,10 @@ typedef struct {
 
 #define VEC_TO_GENERIC(v) ((VectorGeneric){&(v)->h, (void**)&(v)->items, sizeof((v)->_type_tag)})
 
-// User-Space macros, you want to use them:
+#define VEC_ASSERT(expr) \
+  ((expr) ? (void)0 : __vec_assert_fail(#expr, __FILE__, __LINE__, __func__))
+
+// User-space macros, you want to use them:
 
 #define vec_init(TName) (Vector(TName)){0}
 
@@ -88,17 +102,20 @@ typedef struct {
 #define vec_remove_unord(v, idx) \
   _vec_remove_unord(VEC_TO_GENERIC((v)), (idx))
 
-#define vec_at(v, index)                                             \
-  (*((__typeof__((v)->_type_tag)*)                                    \
-     _vec_at(VEC_TO_GENERIC((v)), (index))))
+#define vec_remove_idx(v, idx) \
+  _vec_remove_idx(VEC_TO_GENERIC((v)), (idx))
 
-#define vec_idx(v, item)                                             \
+#define vec_at(v, index)                                             \
+  ((__typeof__((v)->_type_tag)*)                                    \
+     _vec_at(VEC_TO_GENERIC((v)), (index)))
+
+#define vec_find(v, item)                                             \
   __extension__({                                                   \
       __typeof__((v)->_type_tag) _tmp = (item);                      \
-      _vec_idx(VEC_TO_GENERIC((v)), &_tmp); \
+      _vec_find(VEC_TO_GENERIC((v)), &_tmp); \
     })
 
-#define vec_contains(v, item) (vec_idx(v, item) != -1)
+#define vec_contains(v, item) (vec_find(v, item) != -1)
 
 #define vec_pop(v, out)                                               \
   _vec_pop(VEC_TO_GENERIC((v)), (out))
@@ -107,61 +124,50 @@ typedef struct {
   _vec_reserve(VEC_TO_GENERIC((v)), (extra))
 
 #define vec_free(v) _vec_free(VEC_TO_GENERIC((v)))
+#define vec_isfreed(v) _vec_isfreed(VEC_TO_GENERIC((v)))
 
-#define vec_override_item_comparator(v, func) \
-  ((v)->h.item_comparator = func)
-
-#define vec_equals(lv, rv)                      \
-  _vec_equals(&(lv)->h, (lv)->items,            \
-              &(rv)->h, (rv)->items,            \
-              sizeof((lv)->_type_tag),          \
-              sizeof((rv)->_type_tag))
+#define vec_equals(lhs, rhs)                                \
+  _vec_equals(VEC_TO_GENERIC((lhs)), VEC_TO_GENERIC((rhs)))
 
 // Convenience accessors
 #define vec_len(v)   ((v)->h.len)
 #define vec_cap(v)   ((v)->h.cap)
 #define vec_esize(v) (sizeof((v)->_type_tag))
 
+// They'll return pointer
 #define vec_last(v) (vec_at((v), vec_len((v)) - 1))
 #define vec_first(v) (vec_at((v), 0))
 
-#define vec_islast(v, item) (vec_last((v)) == item)
-#define vec_isfirst(v, item) (vec_first((v)) == item)
+#define vec_islast(v, item) (vec_last((v)) ? (*vec_last((v)) == item) : false)
+#define vec_isfirst(v, item) (vec_first((v)) ? (*vec_first((v)) == item) : false)
 
-#define vec_foreach(v, it) for(__typeof__((v)->_type_tag)* it = (v)->items; it < (v)->items + vec_len((v)); it++)
+#define vec_foreach(v, it)                                              \
+  for(__typeof__((v)->_type_tag)* it =                                  \
+        (VEC_ASSERT(!vec_isfreed((v)) && "Vector shouldn't be freed (possible use-after-free)"), (v)->items); \
+      it < (v)->items + vec_len((v)); it++)
 
 // Raw Functions
 
 VECTORDEF bool _vec_push(VectorGeneric v, const void* value);
-
 VECTORDEF bool _vec_push_many(VectorGeneric v, const void* values, size_t count);
-
 VECTORDEF bool _vec_remove_unord(VectorGeneric v, size_t idx);
-
+VECTORDEF bool _vec_remove_idx(VectorGeneric v, size_t idx);
 VECTORDEF void* _vec_at(VectorGeneric v, size_t index);
-
-VECTORDEF int _vec_idx(VectorGeneric v, const void* item);
-
+VECTORDEF int _vec_find(VectorGeneric v, const void* item);
 VECTORDEF bool _vec_pop(VectorGeneric v, void* out);
-
 VECTORDEF bool _vec_reserve(VectorGeneric v, size_t extra);
-
 VECTORDEF void _vec_free(VectorGeneric v);
+VECTORDEF bool _vec_isfreed(VectorGeneric v);
+VECTORDEF bool _vec_equals(VectorGeneric lhs, VectorGeneric rhs);
 
-VECTORDEF bool _vec_equals(VectorHeader* lh, void* li,
-                           VectorHeader* rh, void* ri,
-                           size_t les, size_t res);
+// Utility functions
+VECTORDEF _Noreturn void __vec_assert_fail(const char *assertion, const char *file,
+                                        unsigned int line, const char *function);
 
 #ifdef VECTOR_IMPLEMENTATION
 
-void _vec_free(VectorGeneric v) {
-  free(*v.items);
-  *v.items = NULL;
-  v.header->len = 0;
-  v.header->cap = 0;
-}
-
 bool _vec_reserve(VectorGeneric v, size_t extra) {
+  // no need to check UAF
   if (v.header->cap >= SIZE_MAX / 2) return false;
   size_t needed = v.header->len + extra;
 
@@ -171,7 +177,7 @@ bool _vec_reserve(VectorGeneric v, size_t extra) {
   // calculate new capacity
   size_t new_cap = v.header->cap ? v.header->cap : VEC_INITIAL_CAPACITY;
   while (new_cap < needed)
-    new_cap *= 2;
+    new_cap += (new_cap >> 1); // roughly multiply by 1.5
 
   void* tmp = realloc(*v.items, new_cap * v.elem_size);
   if (!tmp) return false;
@@ -180,15 +186,8 @@ bool _vec_reserve(VectorGeneric v, size_t extra) {
   return true;
 }
 
-bool _vec_pop(VectorGeneric v, void* out) {
-  if (v.header->len == 0) return false;
-  if (out) memcpy(out, (char*)(*v.items) + (v.header->len - 1) * v.elem_size, v.elem_size);
-  v.header->len -= 1;
-  return true;
-}
-
 bool _vec_push(VectorGeneric v, const void* value) {
-  if (!_vec_reserve(v, 1)) return false;
+  if (_vec_isfreed(v) || !_vec_reserve(v, 1)) return false;
 
   memcpy(
     (char*)(*v.items) + v.header->len * v.elem_size,
@@ -200,7 +199,7 @@ bool _vec_push(VectorGeneric v, const void* value) {
 }
 
 bool _vec_push_many(VectorGeneric v, const void* values, size_t count) {
-  if (!_vec_reserve(v, count)) return false;
+  if (_vec_isfreed(v) || !_vec_reserve(v, count)) return false;
 
   memcpy(
     (char*)(*v.items) + v.header->len * v.elem_size,
@@ -211,35 +210,67 @@ bool _vec_push_many(VectorGeneric v, const void* values, size_t count) {
   return true;
 }
 
+bool _vec_pop(VectorGeneric v, void* out) {
+  if (v.header->len == 0) return false; // already checks UAF
+  if (out) memcpy(out, _vec_at(v, v.header->len - 1), v.elem_size);
+  v.header->len -= 1;
+  return true;
+}
+
 bool _vec_remove_unord(VectorGeneric v, size_t idx) {
-  if (idx >= v.header->len) return false;
+  if (idx >= v.header->len) return false; // already checks UAF
   memmove(_vec_at(v, idx), _vec_at(v, v.header->len - 1), v.elem_size);
   v.header->len -= 1;
   return true;
 }
 
+bool _vec_remove_idx(VectorGeneric v, size_t idx) {
+  if (idx >= v.header->len) return false; // already checks UAF
+  memmove(_vec_at(v, idx), _vec_at(v, idx + 1), (v.header->len - idx - 1)*v.elem_size);
+  v.header->len -= 1;
+  return true;
+}
+
+void _vec_free(VectorGeneric v) {
+  free(*v.items); // it'll trigger double free then abortion
+  *v.items = NULL;
+  v.header->len = 0;
+  v.header->cap = 0;
+  v.header->is_freed = true;
+}
+
+bool _vec_isfreed(VectorGeneric v) {
+  return v.header->is_freed;
+}
+
 void* _vec_at(VectorGeneric v, size_t idx) {
-  if (!(*v.items) || idx >= v.header->len) return NULL;
+  if (idx >= v.header->len) return NULL; // already checks UAF
   return (char*)(*v.items) + idx * v.elem_size;
 }
 
-int _vec_idx(VectorGeneric v, const void* item) {
-  for (size_t i = 0; i < v.header->len; i++) {
-    uint8_t* b = (uint8_t*)(*v.items) + i * v.elem_size;
-    vec_item_comparator_t comp_fn = v.header->item_comparator ? v.header->item_comparator : memcmp;
-    if (comp_fn(b, item, v.elem_size) == 0) return i;
+int _vec_find(VectorGeneric v, const void* item) {
+  for (size_t i = 0; i < v.header->len; i++) { // already checks boundaries and UAF
+    if (memcmp(_vec_at(v, i), item, v.elem_size) == 0) return i;
   }
   return -1;
 }
 
-// lh/rh -> left/right-hand side header
-// li/ri -> left/right-hand side items
-// les/res -> left/right-hand side element size (elem_size)
-bool _vec_equals(VectorHeader* lh, void* li, VectorHeader* rh, void* ri,
-                 size_t les, size_t res) {
-  if (li == ri) return true;
-  if (les != res || lh->len != rh->len) return false;
-  return memcmp(li, ri, lh->len * les) == 0;
+bool _vec_equals(VectorGeneric lhs, VectorGeneric rhs) {
+  if (_vec_isfreed(lhs) || _vec_isfreed(rhs)) return false;
+  if (*lhs.items == *rhs.items) return true;
+  if (lhs.elem_size != rhs.elem_size
+      || lhs.header->len != rhs.header->len) return false;
+  return memcmp(*lhs.items, *rhs.items, lhs.header->len * lhs.elem_size) == 0;
+}
+
+_Noreturn void __vec_assert_fail(const char *assertion, const char *file,
+                                 unsigned int line, const char *function) {
+  fprintf(stderr, "%s:%u: %s: "
+          "\033[1;31m" "ASSERTION FAILED"
+          "\033[0m" ": '"
+          "\033[1;36m" "%s"
+          "\033[0m" "'\n", file, line, function, assertion);
+  abort();
 }
 
 #endif // VECTOR_IMPLEMENTATION
