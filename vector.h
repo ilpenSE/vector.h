@@ -7,7 +7,7 @@
 
   Usage:
   #define VECTOR_IMPLEMENTATION
-  #include “vector.h”
+  #include "vector.h"
 
   typedef char* char_ptr;
   DECL_VECTOR(int, int)
@@ -28,18 +28,18 @@
 */
 
 #ifdef __cplusplus
-  #define VECTORDEF extern “C”
+  #define VECTORDEF extern "C"
 #else
   #define VECTORDEF extern
 #endif
 
+#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdlib.h>
-#include <string.h>
 
 #define VEC_INITIAL_CAPACITY 64
+static_assert(VEC_INITIAL_CAPACITY > 1, "VEC_INITIAL_CAPACITY must be >1");
 
 // Predefined typedefs to use in DECL_VECTOR and Vector()
 #ifndef __char_ptr_defined
@@ -80,9 +80,6 @@ typedef struct {
 
 #define VEC_TO_GENERIC(v) ((VectorGeneric){&(v)->h, (void**)&(v)->items, sizeof((v)->_type_tag)})
 
-#define VEC_ASSERT(expr) \
-  ((expr) ? (void)0 : __vec_assert_fail(#expr, __FILE__, __LINE__, __func__))
-
 // User-space macros, you want to use them:
 
 #define vec_init(TName) (Vector(TName)){0}
@@ -105,22 +102,22 @@ typedef struct {
 #define vec_remove_idx(v, idx) \
   _vec_remove_idx(VEC_TO_GENERIC((v)), (idx))
 
-#define vec_at(v, index)                                             \
-  ((__typeof__((v)->_type_tag)*)                                    \
-     _vec_at(VEC_TO_GENERIC((v)), (index)))
+#define vec_at(v, index)                        \
+  ((__typeof__((v)->_type_tag)*)                \
+   _vec_at(VEC_TO_GENERIC((v)), (index)))
 
-#define vec_find(v, item)                                             \
-  __extension__({                                                   \
-      __typeof__((v)->_type_tag) _tmp = (item);                      \
-      _vec_find(VEC_TO_GENERIC((v)), &_tmp); \
+#define vec_find(v, item)                       \
+  __extension__({                               \
+      __typeof__((v)->_type_tag) _tmp = (item); \
+      _vec_find(VEC_TO_GENERIC((v)), &_tmp);    \
     })
 
 #define vec_contains(v, item) (vec_find(v, item) != -1)
 
-#define vec_pop(v, out)                                               \
+#define vec_pop(v, out)                         \
   _vec_pop(VEC_TO_GENERIC((v)), (out))
 
-#define vec_reserve(v, extra)                                           \
+#define vec_reserve(v, extra)                   \
   _vec_reserve(VEC_TO_GENERIC((v)), (extra))
 
 #define vec_free(v) _vec_free(VEC_TO_GENERIC((v)))
@@ -143,7 +140,7 @@ typedef struct {
 
 #define vec_foreach(v, it)                                              \
   for(__typeof__((v)->_type_tag)* it =                                  \
-        (VEC_ASSERT(!vec_isfreed((v)) && "Vector shouldn't be freed (possible use-after-free)"), (v)->items); \
+        (assert(!vec_isfreed((v)) && "Vector shouldn't be freed (possible use-after-free)"), (v)->items); \
       it < (v)->items + vec_len((v)); it++)
 
 // Raw Functions
@@ -160,11 +157,10 @@ VECTORDEF void _vec_free(VectorGeneric v);
 VECTORDEF bool _vec_isfreed(VectorGeneric v);
 VECTORDEF bool _vec_equals(VectorGeneric lhs, VectorGeneric rhs);
 
-// Utility functions
-VECTORDEF _Noreturn void __vec_assert_fail(const char *assertion, const char *file,
-                                        unsigned int line, const char *function);
-
 #ifdef VECTOR_IMPLEMENTATION
+
+#include <stdlib.h>
+#include <string.h>
 
 bool _vec_reserve(VectorGeneric v, size_t extra) {
   // no need to check UAF
@@ -250,7 +246,7 @@ void* _vec_at(VectorGeneric v, size_t idx) {
 
 int _vec_find(VectorGeneric v, const void* item) {
   for (size_t i = 0; i < v.header->len; i++) { // already checks boundaries and UAF
-    if (memcmp(_vec_at(v, i), item, v.elem_size) == 0) return i;
+    if (memcmp(_vec_at(v, i), item, v.elem_size) == 0) return (int)i;
   }
   return -1;
 }
@@ -261,16 +257,6 @@ bool _vec_equals(VectorGeneric lhs, VectorGeneric rhs) {
   if (lhs.elem_size != rhs.elem_size
       || lhs.header->len != rhs.header->len) return false;
   return memcmp(*lhs.items, *rhs.items, lhs.header->len * lhs.elem_size) == 0;
-}
-
-_Noreturn void __vec_assert_fail(const char *assertion, const char *file,
-                                 unsigned int line, const char *function) {
-  fprintf(stderr, "%s:%u: %s: "
-          "\033[1;31m" "ASSERTION FAILED"
-          "\033[0m" ": '"
-          "\033[1;36m" "%s"
-          "\033[0m" "'\n", file, line, function, assertion);
-  abort();
 }
 
 #endif // VECTOR_IMPLEMENTATION
